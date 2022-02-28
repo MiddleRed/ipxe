@@ -26,6 +26,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <ipxe/efi/efi.h>
 #include <ipxe/efi/Protocol/ConsoleControl/ConsoleControl.h>
 #include <ipxe/ansiesc.h>
+#include <ipxe/utf8.h>
 #include <ipxe/console.h>
 #include <ipxe/keymap.h>
 #include <ipxe/init.h>
@@ -208,13 +209,24 @@ static struct ansiesc_context efi_ansiesc_ctx = {
  */
 static void efi_putchar ( int character ) {
 	EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *conout = efi_systab->ConOut;
-	wchar_t wstr[] = { character, 0 };
+	static struct utf8_accumulator utf8;
+	static wchar_t wstr[2];
 
 	/* Intercept ANSI escape sequences */
 	character = ansiesc_process ( &efi_ansiesc_ctx, character );
 	if ( character < 0 )
 		return;
 
+	/* Accumulate Unicode characters */
+	if ( ( character = utf8_accumulate ( &utf8, character ) ) == 0 )
+		return;
+
+	/* Treat unrepresentable (non-UCS2) characters as invalid */
+	if ( character & ~( ( wchar_t ) -1UL ) )
+		character = UTF8_INVALID;
+
+	/* Output character */
+	wstr[0] = character;
 	conout->OutputString ( conout, wstr );
 }
 
